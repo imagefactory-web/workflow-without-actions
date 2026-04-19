@@ -1,0 +1,79 @@
+name: Deploy Java App to AWS (Manual)
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # Step 1 — Clone repo manually
+      - name: Clone Repository
+        run: |
+          git clone https://github.com/${{ github.repository }} .
+          git checkout ${{ github.ref_name }}
+
+      # Step 2 — Install Java (JDK 17)
+      - name: Install Java
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk
+          java -version
+
+      # Step 3 — Install Maven
+      - name: Install Maven
+        run: |
+          sudo apt-get install -y maven
+          mvn -version
+
+      # Step 4 — Build Java Application
+      - name: Build with Maven
+        run: |
+          mvn clean install
+
+      # Step 5 — Configure AWS credentials manually
+      - name: Configure AWS Credentials
+        run: |
+          mkdir -p ~/.aws
+          echo "[default]" > ~/.aws/credentials
+          echo "aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}" >> ~/.aws/credentials
+          echo "aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.aws/credentials
+
+          echo "[default]" > ~/.aws/config
+          echo "region=ap-south-1" >> ~/.aws/config
+
+      # Step 6 — Install AWS CLI
+      - name: Install AWS CLI
+        run: |
+          sudo apt-get install -y awscli
+          aws --version
+
+      # Step 7 — Login to ECR
+      - name: Login to ECR
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGION=ap-south-1
+          aws ecr get-login-password --region $REGION \
+            | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
+
+      # Step 8 — Build Docker Image (Java JAR)
+      - name: Build Docker Image
+        run: |
+          docker build -t my-java-app:latest .
+
+      # Step 9 — Tag Docker Image
+      - name: Tag Image
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGION=ap-south-1
+          docker tag my-java-app:latest $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/my-java-app:latest
+
+      # Step 10 — Push to ECR
+      - name: Push Image
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGION=ap-south-1
+          docker push $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/my-java-app:latest
